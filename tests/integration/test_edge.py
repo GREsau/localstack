@@ -10,12 +10,13 @@ import xmltodict
 from requests.models import Request as RequestsRequest
 
 from localstack import config
-from localstack.aws.accounts import get_aws_account_id
 from localstack.constants import (
     APPLICATION_JSON,
     HEADER_LOCALSTACK_EDGE_URL,
     TEST_AWS_ACCESS_KEY_ID,
+    TEST_AWS_ACCOUNT_ID,
     TEST_AWS_REGION_NAME,
+    TEST_AWS_SECRET_ACCESS_KEY,
 )
 from localstack.services.generic_proxy import (
     MessageModifyingProxyListener,
@@ -37,7 +38,12 @@ class TestEdgeAPI:
 
     def test_invoke_dynamodb(self, aws_client_factory):
         edge_url = config.get_edge_url()
-        client = aws_client_factory(endpoint_url=edge_url).dynamodb
+        client = aws_client_factory(
+            endpoint_url=edge_url,
+            region_name=TEST_AWS_REGION_NAME,
+            aws_access_key_id=TEST_AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=TEST_AWS_SECRET_ACCESS_KEY,
+        ).dynamodb
         self._invoke_dynamodb_via_edge_go_sdk(edge_url, client)
 
     def test_invoke_dynamodbstreams(self, aws_client_factory):
@@ -98,6 +104,9 @@ class TestEdgeAPI:
             "Amz-Sdk-Request": "attempt=1; max=3",
             "Content-Type": "application/x-amz-json-1.0",
             "X-Amz-Target": "DynamoDB_20120810.DescribeTable",
+            "Authorization": aws_stack.mock_aws_request_headers(
+                "dynamodb", TEST_AWS_ACCESS_KEY_ID, TEST_AWS_REGION_NAME
+            )["Authorization"],
         }
         data = json.dumps({"TableName": table_name})
         response = requests.post(edge_url, data=data, headers=headers)
@@ -334,7 +343,7 @@ class TestEdgeAPI:
             json.loads(content1)
         content1 = xmltodict.parse(content1)
         content1_result = content1["GetCallerIdentityResponse"]["GetCallerIdentityResult"]
-        assert content1_result["Account"] == get_aws_account_id()
+        assert content1_result["Account"] == TEST_AWS_ACCOUNT_ID
 
         # receive response as JSON (via Accept header)
         headers = aws_stack.mock_aws_request_headers(
@@ -345,7 +354,7 @@ class TestEdgeAPI:
         assert response
         content2 = json.loads(to_str(response.content))
         content2_result = content2["GetCallerIdentityResponse"]["GetCallerIdentityResult"]
-        assert content2_result["Account"] == get_aws_account_id()
+        assert content2_result["Account"] == TEST_AWS_ACCOUNT_ID
         content1.get("GetCallerIdentityResponse", {}).pop("ResponseMetadata", None)
         content2.get("GetCallerIdentityResponse", {}).pop("ResponseMetadata", None)
         assert strip_xmlns(content1) == content2
